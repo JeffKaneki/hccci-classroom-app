@@ -1,10 +1,11 @@
 {
   "expo": {
-    "name": "hccci-classroom-app",
-    "slug": "hccci-classroom-app",
+    "name": "HCCCI Room Availability",
+    "slug": "hccci-room-availability",
+    "scheme": "hccci-room-availability",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/school_logo_small.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -12,14 +13,20 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "foregroundImage": "./assets/school_logo_small.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/school_logo_small.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "@react-native-community/datetimepicker",
+      "expo-font"
+    ]
   }
 }
