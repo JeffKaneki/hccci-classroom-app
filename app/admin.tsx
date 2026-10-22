@@ -2,14 +2,14 @@ import { Link, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ActivityIndicator, Button, Card, Chip, Menu, Paragraph, SegmentedButtons, Text, TextInput, Title } from 'react-native-paper';
-import type { Reservation, RoomBlock } from '../src/lib/availability';
+import { ActivityIndicator, Button, Card, Chip, Dialog, Menu, Paragraph, Portal, SegmentedButtons, Text, TextInput, Title } from 'react-native-paper';
+import type { Course, Reservation, RoomBlock } from '../src/lib/availability';
 import { supabase } from '../src/lib/supabase';
 import { findScheduleConflicts } from '../src/lib/scheduleConflicts';
 import { getTimetableCell, getWeekDateKeys } from '../src/lib/timetable';
 import { findRoomNumberDuplicate } from '../src/lib/roomValidation';
 
-type AdminSection = 'reservations' | 'reports' | 'rooms' | 'accounts';
+type AdminSection = 'reservations' | 'reports' | 'rooms' | 'accounts' | 'courses';
 type RoomAction = 'classroom' | 'edit' | 'schedule' | 'closure' | 'exception';
 
 interface AdminReservation {
@@ -51,6 +51,7 @@ interface AdminSchedule {
   effective_start: string;
   effective_end: string | null;
   enabled: boolean;
+  course_id: string | null;
 }
 
 interface AdminException {
@@ -67,6 +68,7 @@ interface AdminAccount {
   full_name: string;
   email: string;
   role: 'user' | 'admin';
+  course_id: string | null;
   created_at: string;
 }
 
@@ -100,11 +102,17 @@ export default function AdminScreen() {
   const [blocks, setBlocks] = useState<RoomBlock[]>([]);
   const [approvedReservations, setApprovedReservations] = useState<Reservation[]>([]);
   const [accounts, setAccounts] = useState<AdminAccount[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [busyId, setBusyId] = useState('');
+  const [schedulePendingDelete, setSchedulePendingDelete] = useState<AdminSchedule | null>(null);
   const [currentUserId, setCurrentUserId] = useState('');
   const [editingAccountId, setEditingAccountId] = useState('');
   const [accountName, setAccountName] = useState('');
   const [accountRole, setAccountRole] = useState<'user' | 'admin'>('user');
+  const [accountCourseId, setAccountCourseId] = useState('');
+  const [courseCode, setCourseCode] = useState('');
+  const [courseYear, setCourseYear] = useState('');
+  const [courseMenuOpen, setCourseMenuOpen] = useState(false);
   const [roomId, setRoomId] = useState('');
   const [editRoomId, setEditRoomId] = useState('');
   const [editingScheduleId, setEditingScheduleId] = useState('');
@@ -119,6 +127,7 @@ export default function AdminScreen() {
   const [description, setDescription] = useState('');
   const [amenities, setAmenities] = useState('');
   const [scheduleTitle, setScheduleTitle] = useState('');
+  const [scheduleCourseId, setScheduleCourseId] = useState('');
   const [weekday, setWeekday] = useState('1');
   const [selectedWeekdays, setSelectedWeekdays] = useState<number[]>([1]);
   const [startTime, setStartTime] = useState('09:00');
@@ -160,19 +169,20 @@ export default function AdminScreen() {
       const weekStart = new Date(`${weekDates[0]}T00:00:00+08:00`).toISOString();
       const previewEnd = new Date(`${weekDates[0]}T00:00:00+08:00`);
       previewEnd.setUTCDate(previewEnd.getUTCDate() + 14);
-      const [reservationResult, reportResult, roomResult, blockResult, approvedResult, accountResult] = await Promise.all([
+      const [reservationResult, reportResult, roomResult, blockResult, approvedResult, accountResult, courseResult] = await Promise.all([
         supabase.from('reservations').select('id,classroom_id,title,starts_at,ends_at,status').eq('status', 'pending').order('starts_at'),
         supabase.from('reports').select('id,classroom_id,report_type,details,status,created_at').in('status', ['new', 'in_review']).order('created_at'),
         supabase.from('classrooms').select('id,name,room_number,building,floor,capacity,description,amenities,active').order('building').order('room_number'),
         supabase.from('room_blocks').select('id,classroom_id,title,reason,starts_at,ends_at').gte('ends_at', weekStart).lt('starts_at', previewEnd.toISOString()),
         supabase.from('reservations').select('id,classroom_id,title,starts_at,ends_at,status').eq('status', 'approved').gte('ends_at', weekStart).lt('starts_at', previewEnd.toISOString()),
-        supabase.from('profiles').select('id,full_name,email,role,created_at').order('created_at', { ascending: false }),
+        supabase.from('profiles').select('id,full_name,email,role,course_id,created_at').order('created_at', { ascending: false }),
+        supabase.from('courses').select('id,code,year,active').order('code').order('year'),
       ]);
       const [scheduleResult, exceptionResult] = await Promise.all([
-        supabase.from('recurring_schedules').select('id,classroom_id,title,day_of_week,start_time,end_time,effective_start,effective_end,enabled'),
+        supabase.from('recurring_schedules').select('id,classroom_id,course_id,title,day_of_week,start_time,end_time,effective_start,effective_end,enabled'),
         supabase.from('schedule_exceptions').select('id,classroom_id,schedule_id,exception_date,type,notes').gte('exception_date', manilaDate()).order('exception_date'),
       ]);
-      const dataError = reservationResult.error ?? reportResult.error ?? roomResult.error ?? blockResult.error ?? approvedResult.error ?? accountResult.error ?? scheduleResult.error ?? exceptionResult.error;
+      const dataError = reservationResult.error ?? reportResult.error ?? roomResult.error ?? blockResult.error ?? approvedResult.error ?? accountResult.error ?? courseResult.error ?? scheduleResult.error ?? exceptionResult.error;
       if (dataError) throw new Error(dataError.message);
       setReservations((reservationResult.data ?? []) as AdminReservation[]);
       setReports((reportResult.data ?? []) as AdminReport[]);
@@ -182,6 +192,7 @@ export default function AdminScreen() {
       setBlocks((blockResult.data ?? []) as RoomBlock[]);
       setApprovedReservations((approvedResult.data ?? []) as Reservation[]);
       setAccounts((accountResult.data ?? []) as AdminAccount[]);
+      setCourses((courseResult.data ?? []) as Course[]);
       setRoomId((current) => current || roomResult.data?.[0]?.id || '');
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load administrator data.');
@@ -201,6 +212,8 @@ export default function AdminScreen() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reservations' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reports' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'classrooms' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'courses' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'recurring_schedules' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'schedule_exceptions' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_blocks' }, scheduleRefresh)
@@ -256,6 +269,7 @@ export default function AdminScreen() {
     setEditingAccountId(account.id);
     setAccountName(account.full_name);
     setAccountRole(account.role);
+    setAccountCourseId(account.course_id ?? '');
     setError('');
   };
 
@@ -271,6 +285,7 @@ export default function AdminScreen() {
         target_user_id: editingAccountId,
         new_full_name: accountName.trim(),
         new_role: accountRole,
+        new_course_id: accountCourseId || null,
       });
       if (updateError) throw new Error(updateError.message);
       setNotice('Account changes saved.');
@@ -278,6 +293,48 @@ export default function AdminScreen() {
       await refresh();
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : 'Could not update account.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createCourse = async () => {
+    const normalizedCode = courseCode.trim().toUpperCase();
+    const year = Number(courseYear);
+    if (!/^[A-Z0-9]+$/.test(normalizedCode) || !Number.isInteger(year) || year < 1 || year > 6) {
+      setError('Enter a course code using letters/numbers and a year from 1 to 6.');
+      return;
+    }
+    if (courses.some((course) => course.code === normalizedCode && course.year === year)) {
+      setError('That course and year already exists.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const { error: insertError } = await supabase.from('courses').insert({ code: normalizedCode, year, active: true });
+      if (insertError) throw new Error(insertError.message);
+      setCourseCode('');
+      setCourseYear('');
+      setNotice(`${normalizedCode}-${year} added.`);
+      await refresh();
+    } catch (courseError) {
+      setError(courseError instanceof Error ? courseError.message : 'Could not add course and year.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleCourse = async (course: Course) => {
+    setSaving(true);
+    setError('');
+    try {
+      const { error: updateError } = await supabase.from('courses').update({ active: !course.active }).eq('id', course.id);
+      if (updateError) throw new Error(updateError.message);
+      setNotice(course.active ? `${course.code}-${course.year} archived.` : `${course.code}-${course.year} restored.`);
+      await refresh();
+    } catch (courseError) {
+      setError(courseError instanceof Error ? courseError.message : 'Could not change course status.');
     } finally {
       setSaving(false);
     }
@@ -411,6 +468,7 @@ export default function AdminScreen() {
     setRoomId(schedule.classroom_id);
     setEditingScheduleId(schedule.id);
     setScheduleTitle(schedule.title);
+    setScheduleCourseId(schedule.course_id ?? '');
     setWeekday(String(schedule.day_of_week));
     setSelectedWeekdays([schedule.day_of_week]);
     setStartTime(schedule.start_time.slice(0, 5));
@@ -423,6 +481,7 @@ export default function AdminScreen() {
   const cancelScheduleEdit = () => {
     setEditingScheduleId('');
     setScheduleTitle('');
+    setScheduleCourseId('');
     setWeekday('1');
     setSelectedWeekdays([1]);
     setStartTime('09:00');
@@ -444,8 +503,8 @@ export default function AdminScreen() {
   };
 
   const saveSchedule = async () => {
-    if (!roomId || !scheduleTitle.trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime) || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveStart) || (effectiveEnd && !/^\d{4}-\d{2}-\d{2}$/.test(effectiveEnd)) || (!editingScheduleId && selectedWeekdays.length === 0)) {
-      setError('Choose a room, title, valid 24-hour times, and effective start date.');
+    if (!roomId || !scheduleCourseId || !scheduleTitle.trim() || !/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime) || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveStart) || (effectiveEnd && !/^\d{4}-\d{2}-\d{2}$/.test(effectiveEnd)) || (!editingScheduleId && selectedWeekdays.length === 0)) {
+      setError('Choose a room, course and year, title, valid 24-hour times, and effective start date.');
       return;
     }
     if (startTime >= endTime || (effectiveEnd && effectiveEnd < effectiveStart) || !/^[0-6]$/.test(weekday)) {
@@ -508,6 +567,7 @@ export default function AdminScreen() {
     try {
       const scheduleValues = {
         classroom_id: roomId,
+        course_id: scheduleCourseId || null,
         title: scheduleTitle.trim(),
         start_time: startTime,
         end_time: endTime,
@@ -543,32 +603,23 @@ export default function AdminScreen() {
     }
   };
 
-  const deleteSchedule = (schedule: AdminSchedule) => {
-    Alert.alert('Delete schedule?', `${schedule.title} on ${weekdays[schedule.day_of_week]} will be removed.`, [
-      { text: 'Keep schedule', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            setBusyId(schedule.id);
-            setError('');
-            try {
-              const { error: deleteError } = await supabase.from('recurring_schedules').delete().eq('id', schedule.id);
-              if (deleteError) throw new Error(deleteError.message);
-              if (editingScheduleId === schedule.id) cancelScheduleEdit();
-              setNotice('Schedule deleted.');
-              await refresh();
-            } catch (deleteError) {
-              setError(deleteError instanceof Error ? deleteError.message : 'Could not delete schedule.');
-            } finally {
-              setBusyId('');
-            }
-          })();
-        },
-      },
-    ]);
+  const deleteSchedule = async (schedule: AdminSchedule) => {
+    setBusyId(schedule.id);
+    setError('');
+    try {
+      const { error: deleteError } = await supabase.from('recurring_schedules').delete().eq('id', schedule.id);
+      if (deleteError) throw new Error(deleteError.message);
+      if (editingScheduleId === schedule.id) cancelScheduleEdit();
+      setNotice('Schedule deleted.');
+      await refresh();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Could not delete schedule.');
+    } finally {
+      setBusyId('');
+    }
   };
+
+  const confirmDeleteSchedule = (schedule: AdminSchedule) => setSchedulePendingDelete(schedule);
 
   const createClosure = async () => {
     if (!roomId || !blockTitle.trim() || !blockReason.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(blockDate) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(blockStart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(blockEnd)) {
@@ -713,6 +764,7 @@ export default function AdminScreen() {
             { value: 'reports', label: `Reports (${reports.length})` },
             { value: 'rooms', label: 'Room tools' },
             { value: 'accounts', label: `Accounts (${accounts.length})` },
+            { value: 'courses', label: `Courses (${courses.filter((course) => course.active).length})` },
           ]} />
 
           {section === 'reservations' ? (
@@ -766,8 +818,15 @@ export default function AdminScreen() {
                   </View>
                   <Text style={account.role === 'admin' ? styles.approvedStatus : styles.status}>{account.role}</Text>
                 </View>
+                <Text style={styles.meta}>Course/year: {courses.find((course) => course.id === account.course_id)?.code ?? 'Not assigned'}{account.course_id ? `-${courses.find((course) => course.id === account.course_id)?.year ?? ''}` : ''}</Text>
                 {editingAccountId === account.id ? <>
                   <TextInput label="Full name" mode="outlined" value={accountName} onChangeText={setAccountName} style={styles.input} />
+                  <Menu visible={courseMenuOpen} onDismiss={() => setCourseMenuOpen(false)} anchor={<Button mode="outlined" onPress={() => setCourseMenuOpen(true)} style={styles.input}>
+                    {accountCourseId ? `${courses.find((course) => course.id === accountCourseId)?.code}-${courses.find((course) => course.id === accountCourseId)?.year}` : 'No course/year assigned'}
+                  </Button>}>
+                    <Menu.Item title="No course/year assigned" onPress={() => { setAccountCourseId(''); setCourseMenuOpen(false); }} />
+                    {courses.filter((course) => course.active).map((course) => <Menu.Item key={course.id} title={`${course.code}-${course.year}`} onPress={() => { setAccountCourseId(course.id); setCourseMenuOpen(false); }} />)}
+                  </Menu>
                   <View style={styles.accountRoleRow}>
                     <Text style={styles.meta}>Role</Text>
                     <Chip selected={accountRole === 'user'} onPress={() => setAccountRole('user')}>User</Chip>
@@ -783,6 +842,28 @@ export default function AdminScreen() {
                 </View>}
               </Card.Content></Card>)}
               {accounts.length === 0 ? <Text style={styles.empty}>No accounts found.</Text> : null}
+            </View>
+          ) : null}
+
+          {section === 'courses' ? (
+            <View style={styles.stack}>
+              <Card style={styles.card}><Card.Content>
+                <Text style={styles.heading}>Add course and year</Text>
+                <Text style={styles.meta}>Create groups such as BSIT-3 or BECED-3 for accounts and schedules.</Text>
+                <View style={styles.actions}>
+                  <TextInput label="Course code" mode="outlined" value={courseCode} onChangeText={setCourseCode} autoCapitalize="characters" style={styles.halfInput} />
+                  <TextInput label="Year (1-6)" mode="outlined" value={courseYear} onChangeText={setCourseYear} keyboardType="number-pad" style={styles.halfInput} />
+                </View>
+                <Button mode="contained" loading={saving} disabled={saving} onPress={() => void createCourse()}>Add course</Button>
+              </Card.Content></Card>
+              {courses.map((course) => <Card key={course.id} style={styles.card}><Card.Content>
+                <View style={styles.itemHeader}>
+                  <Text style={styles.heading}>{course.code}-{course.year}</Text>
+                  <Text style={course.active ? styles.approvedStatus : styles.status}>{course.active ? 'Active' : 'Archived'}</Text>
+                </View>
+                <Button compact mode="outlined" disabled={saving} onPress={() => void toggleCourse(course)}>{course.active ? 'Archive' : 'Restore'}</Button>
+              </Card.Content></Card>)}
+              {courses.length === 0 ? <Text style={styles.empty}>No courses have been added.</Text> : null}
             </View>
           ) : null}
 
@@ -831,6 +912,11 @@ export default function AdminScreen() {
                   {rooms.map((room) => <Menu.Item key={room.id} title={`${room.name} · ${room.building}`} onPress={() => { setRoomId(room.id); setRoomMenuOpen(false); }} />)}
                 </Menu>
                 {roomAction === 'schedule' ? <>
+                  <Menu visible={courseMenuOpen} onDismiss={() => setCourseMenuOpen(false)} anchor={<Button mode="outlined" onPress={() => setCourseMenuOpen(true)} style={styles.input}>
+                    {scheduleCourseId ? `${courses.find((course) => course.id === scheduleCourseId)?.code}-${courses.find((course) => course.id === scheduleCourseId)?.year}` : 'Choose course and year'}
+                  </Button>}>
+                    {courses.filter((course) => course.active).map((course) => <Menu.Item key={course.id} title={`${course.code}-${course.year}`} onPress={() => { setScheduleCourseId(course.id); setCourseMenuOpen(false); }} />)}
+                  </Menu>
                   <TextInput label="Class / activity" mode="outlined" value={scheduleTitle} onChangeText={setScheduleTitle} style={styles.input} />
                   <Text style={styles.fieldLabel}>{editingScheduleId ? 'Change usage day' : 'Usage days (select one or more)'}</Text>
                   <View style={styles.weekdayPicker}>
@@ -867,13 +953,14 @@ export default function AdminScreen() {
                   {schedules.filter((schedule) => schedule.classroom_id === roomId).map((schedule) => <View key={schedule.id} style={styles.scheduleRow}>
                     <View style={styles.scheduleInfo}>
                       <Text style={styles.status}>{weekdays[schedule.day_of_week]} · {schedule.start_time.slice(0, 5)}-{schedule.end_time.slice(0, 5)}</Text>
+                      <Text style={styles.meta}>{courses.find((course) => course.id === schedule.course_id)?.code ?? 'No course'}{schedule.course_id ? `-${courses.find((course) => course.id === schedule.course_id)?.year ?? ''}` : ''}</Text>
                       <Text style={styles.meta}>{schedule.title} · {schedule.enabled ? 'Enabled' : 'Disabled'}</Text>
                       <Text style={styles.meta}>{schedule.effective_start}{schedule.effective_end ? ` to ${schedule.effective_end}` : ' onward'}</Text>
                     </View>
                     <View style={styles.scheduleActions}>
                       <Button compact disabled={Boolean(busyId) || saving} onPress={() => editSchedule(schedule)}>Edit</Button>
                       <Button compact disabled={Boolean(busyId) || saving} loading={busyId === schedule.id} onPress={() => void toggleSchedule(schedule)}>{schedule.enabled ? 'Disable' : 'Enable'}</Button>
-                      <Button compact disabled={Boolean(busyId) || saving} onPress={() => deleteSchedule(schedule)}>Delete</Button>
+                      <Button compact mode="text" textColor="#b3261e" disabled={Boolean(busyId) || saving} loading={busyId === schedule.id} onPress={() => confirmDeleteSchedule(schedule)}>Delete</Button>
                     </View>
                   </View>)}
                 </> : roomAction === 'closure' ? <>
@@ -911,6 +998,34 @@ export default function AdminScreen() {
               <Text style={styles.meta}>{rooms.length} classrooms in the directory.</Text>
             </View>
           ) : null}
+          <Portal>
+            <Dialog visible={Boolean(schedulePendingDelete)} onDismiss={() => setSchedulePendingDelete(null)}>
+              <Dialog.Title>Delete schedule?</Dialog.Title>
+              <Dialog.Content>
+                <Paragraph>
+                  {schedulePendingDelete
+                    ? `${schedulePendingDelete.title} on ${weekdays[schedulePendingDelete.day_of_week]} will be permanently removed.`
+                    : ''}
+                </Paragraph>
+              </Dialog.Content>
+              <Dialog.Actions>
+                <Button disabled={Boolean(busyId)} onPress={() => setSchedulePendingDelete(null)}>Keep schedule</Button>
+                <Button
+                  textColor="#b3261e"
+                  loading={busyId === schedulePendingDelete?.id}
+                  disabled={Boolean(busyId) || !schedulePendingDelete}
+                  onPress={() => {
+                    if (!schedulePendingDelete) return;
+                    const schedule = schedulePendingDelete;
+                    setSchedulePendingDelete(null);
+                    void deleteSchedule(schedule);
+                  }}
+                >
+                  Delete
+                </Button>
+              </Dialog.Actions>
+            </Dialog>
+          </Portal>
         </>
       ) : null}
     </ScrollView>

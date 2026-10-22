@@ -24,7 +24,7 @@ export async function loadRoomSnapshot(forceRefresh = false): Promise<RoomSnapsh
   const weekStartDate = weekStart.slice(0, 10);
   pendingSnapshot = Promise.all([
     supabase.from('classrooms').select('id,name,room_number,building,floor,capacity,description,amenities,active').eq('active', true).order('building').order('room_number'),
-    supabase.from('recurring_schedules').select('id,classroom_id,title,day_of_week,start_time,end_time,effective_start,effective_end,enabled,notes').eq('enabled', true),
+    supabase.from('recurring_schedules').select('id,classroom_id,course_id,title,day_of_week,start_time,end_time,effective_start,effective_end,enabled,notes').eq('enabled', true),
     supabase.from('room_blocks').select('id,classroom_id,title,reason,starts_at,ends_at').gte('ends_at', weekStartIso),
     supabase.rpc('get_approved_reservations', { week_start: weekStartIso }),
     supabase.from('schedule_exceptions').select('id,classroom_id,schedule_id,exception_date,type,notes').gte('exception_date', weekStartDate),

@@ -10,6 +10,8 @@ begin
 
   foreach table_to_publish in array array[
     'classrooms',
+    'courses',
+    'profiles',
     'recurring_schedules',
     'schedule_exceptions',
     'room_blocks',

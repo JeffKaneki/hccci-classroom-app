@@ -5,7 +5,7 @@
     "scheme": "hccci-room-availability",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/school_logo_small.png",
+    "icon": "./assets/app-icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -13,20 +13,27 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/school_logo_small.png",
+        "foregroundImage": "./assets/app-icon.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.j3fx.hccciroomavailability"
     },
     "web": {
-      "favicon": "./assets/school_logo_small.png"
+      "favicon": "./assets/app-icon.png"
     },
     "plugins": [
       "expo-router",
       "expo-status-bar",
       "@react-native-community/datetimepicker",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cffb8187-ae3b-47ae-a024-8c6b0b6fbf51"
+      }
+    }
   }
 }

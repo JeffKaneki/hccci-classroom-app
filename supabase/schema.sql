@@ -2,11 +2,22 @@ create extension if not exists pgcrypto;
 
 create type public.user_role as enum ('user','admin');
 
+create table if not exists public.courses (
+  id uuid primary key default gen_random_uuid(),
+  code text not null,
+  year integer not null check (year between 1 and 6),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (code, year)
+);
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   full_name text not null,
   email text not null unique,
   role public.user_role not null default 'user',
+  course_id uuid references public.courses (id) on delete set null,
   avatar_url text,
   notification_preferences jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
@@ -38,6 +49,7 @@ create table if not exists public.recurring_schedules (
   effective_start date not null,
   effective_end date,
   enabled boolean not null default true,
+  course_id uuid references public.courses (id) on delete set null,
   term text,
   notes text,
   created_at timestamptz not null default now(),
@@ -103,12 +115,16 @@ create table if not exists public.audit_logs (
 );
 
 create index if not exists classrooms_active_idx on public.classrooms (active);
+create index if not exists profiles_course_id_idx on public.profiles (course_id);
 create index if not exists recurring_schedules_classroom_id_idx on public.recurring_schedules (classroom_id);
+create index if not exists recurring_schedules_course_id_idx on public.recurring_schedules (course_id);
 create index if not exists room_blocks_classroom_idx on public.room_blocks (classroom_id, starts_at, ends_at);
 create index if not exists reservations_classroom_idx on public.reservations (classroom_id, starts_at, ends_at, status);
 create index if not exists reports_status_idx on public.reports (status);
+create unique index if not exists profiles_email_lower_idx on public.profiles (lower(email));
 
 alter table public.profiles enable row level security;
+alter table public.courses enable row level security;
 alter table public.classrooms enable row level security;
 alter table public.recurring_schedules enable row level security;
 alter table public.schedule_exceptions enable row level security;
@@ -132,6 +148,29 @@ $$;
 
 revoke all on function public.is_admin() from public, anon;
 grant execute on function public.is_admin() to authenticated;
+
+create or replace function public.is_registration_email_available(target_email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, auth
+as $$
+  select not exists (
+    select 1
+    from auth.users
+    where lower(email) = lower(btrim(target_email))
+  );
+$$;
+
+revoke all on function public.is_registration_email_available(text) from public;
+grant execute on function public.is_registration_email_available(text) to anon, authenticated;
+
+create policy "courses are readable for registration" on public.courses
+  for select using (active or public.is_admin());
+create policy "admins manage courses" on public.courses
+  for all using (public.is_admin())
+  with check (public.is_admin());
 
 create policy "profiles are viewable by owner or admin" on public.profiles
   for select using (auth.uid() = id or public.is_admin());
@@ -257,12 +296,13 @@ begin
     raise exception 'Registration is limited to email addresses ending in @hccci.edu.ph.';
   end if;
 
-  insert into public.profiles (id, full_name, email, role)
+  insert into public.profiles (id, full_name, email, role, course_id)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'full_name', 'User'),
     new.email,
-    'user'
+    'user',
+    nullif(new.raw_user_meta_data ->> 'course_id', '')::uuid
   )
   on conflict (id) do nothing;
   return new;

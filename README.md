@@ -41,12 +41,16 @@ For a new Supabase project, run `supabase/schema.sql`, then `supabase/realtime.s
 4. `supabase/production_safeguards.sql`
 5. `supabase/account_management.sql`
 6. `supabase/reservation_visibility.sql`
+7. `supabase/course_years.sql`
+8. `supabase/duplicate_registration_guard.sql`
+9. Re-run `supabase/realtime.sql`
 
-The workflow migration replaces the original recursive admin checks with a safe helper and adds owner-scoped policies plus the reservation cancellation RPC. The account migration enables admin account management, and the reservation visibility migration exposes only approved reservations to authenticated users. The Realtime migration publishes the tables used by live subscriptions. Production safeguards enforce the HCCCI email domain in the Auth profile trigger and serialize room requests, approvals, closures, and schedule changes against conflicting use. Do not rerun the base schema over a live project.
+The workflow migration replaces the original recursive admin checks with a safe helper and adds owner-scoped policies plus the reservation cancellation RPC. The account migration enables admin account management, and the reservation visibility migration exposes only approved reservations to authenticated users. The course/year migration adds the admin-managed course catalog, assigns users to a course/year group, and associates recurring schedules with those groups. The Realtime migration publishes the tables used by live subscriptions. Production safeguards enforce the HCCCI email domain in the Auth profile trigger and serialize room requests, approvals, closures, and schedule changes against conflicting use. Do not rerun the base schema over a live project.
 
 This script creates:
 
 - `profiles`
+- `courses`
 - `classrooms`
 - `recurring_schedules`
 - `schedule_exceptions`
@@ -89,9 +93,10 @@ After applying `supabase/realtime.sql`, the dashboard and directory refresh when
 - Schedule setup previews the selected days against recurring schedules, confirmed reservations, and room blocks. Overlapping schedules cannot be saved; existing schedules can be edited, enabled, disabled, or deleted after confirmation.
 - Administrators can add or remove schedule cancellation/holiday exceptions.
 - Reservation requests and approvals are checked in PostgreSQL against enabled schedules, room blocks, and approved bookings; per-room transaction locks prevent simultaneous double-bookings.
-- Room numbers are unique within a building. Room names are not globally unique, so use the building and room number together to identify a classroom. Supabase Auth rejects duplicate account emails.
+- Room numbers are unique within a building. Room names are not globally unique, so use the building and room number together to identify a classroom. Registration checks email availability before creating an account, while Supabase Auth and the database uniqueness constraints remain the final duplicate-account safeguards.
 - To change a recurring usage day, open **Administration → Room tools → Schedule**, choose the room, then select **Edit** beside the schedule. Select the replacement weekday and save. Adding a new schedule allows multiple weekdays; the app stores a schedule row for each selected day.
 - Add at least one classroom through the administrator's Room tools before expecting rooms to appear in the directory.
+- Add course/year groups through **Administration → Courses**, then assign them to accounts and recurring schedules. Users see all schedules assigned to their course/year on the Dashboard.
 
 ## Local development without Supabase
 

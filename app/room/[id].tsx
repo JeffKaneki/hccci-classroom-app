@@ -20,6 +20,7 @@ const baseTableWidth = timeColumnWidth * 2 + dayColumnWidth * 7;
 const vacantColor = '#0b6d42';
 const segmentColors = {
   schedule: '#b3261e',
+  onlineClass: '#06b6d4',
   reservation: '#1769aa',
   block: '#a84d00',
   available: vacantColor,
@@ -87,6 +88,7 @@ export default function RoomTimetableScreen() {
   }, [refresh]));
 
   const room = snapshot?.classrooms.find((item) => item.id === id);
+  const isOnlineClassRoom = room?.name.trim().toLowerCase() === 'online class';
   const usage = room ? getRoomUsageLabels(snapshot?.schedules ?? [], room.id) : [];
   const rowStarts = useMemo(() => {
     const rows: number[] = [];
@@ -136,7 +138,7 @@ export default function RoomTimetableScreen() {
             <View style={styles.headingText}>
               <Text style={styles.eyebrow}>WEEKLY ROOM RECORD</Text>
               <Title style={styles.roomTitle}>{room.name}</Title>
-              <Text style={styles.roomMeta}>{room.building} · {room.room_number} · {room.floor} · Capacity {room.capacity}</Text>
+              <Text style={styles.roomMeta}>{room.building} · {room.floor} · Capacity {room.capacity}</Text>
             </View>
           </View>
 
@@ -169,7 +171,7 @@ export default function RoomTimetableScreen() {
               <Text style={styles.zoomLabel}>{Math.round(tableZoom * 100)}%</Text>
             </View>
             <View style={styles.legend}>
-              <View style={[styles.legendSwatch, { backgroundColor: segmentColors.schedule }]} /><Text style={styles.legendText}>Class</Text>
+              <View style={[styles.legendSwatch, { backgroundColor: isOnlineClassRoom ? segmentColors.onlineClass : segmentColors.schedule }]} /><Text style={styles.legendText}>{isOnlineClassRoom ? 'Online class' : 'Class'}</Text>
               <View style={[styles.legendSwatch, { backgroundColor: segmentColors.reservation }]} /><Text style={styles.legendText}>Reserved</Text>
               <View style={[styles.legendSwatch, { backgroundColor: segmentColors.block }]} /><Text style={styles.legendText}>Blocked</Text>
               <View style={[styles.legendSwatch, { backgroundColor: segmentColors.available }]} /><Text style={styles.legendText}>Vacant</Text>
@@ -216,7 +218,7 @@ export default function RoomTimetableScreen() {
                         styles.segment,
                         {
                           height,
-                          backgroundColor: segmentColors[segment.kind],
+                          backgroundColor: segment.kind === 'schedule' && isOnlineClassRoom ? segmentColors.onlineClass : segmentColors[segment.kind],
                         },
                       ]}
                     >

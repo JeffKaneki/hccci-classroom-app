@@ -1,5 +1,12 @@
 export type RoomStatus = 'available' | 'occupied' | 'upcoming' | 'unavailable';
 
+export interface Course {
+  id: string;
+  code: string;
+  year: number;
+  active: boolean;
+}
+
 export interface Classroom {
   id: string;
   name: string;
@@ -22,6 +29,7 @@ export interface RecurringSchedule {
   effective_start: string;
   effective_end?: string | null;
   enabled: boolean;
+  course_id?: string | null;
   notes?: string | null;
 }
 
